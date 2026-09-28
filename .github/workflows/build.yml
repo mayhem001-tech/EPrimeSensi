@@ -1,0 +1,71 @@
+name: Build E-Prime Sensi APK
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Extract project
+        run: |
+          unzip -q EPrimeSensi-AutoSigned.zip -d /tmp/eprime
+          rm -rf /tmp/eprime/release/.github
+          cp -R /tmp/eprime/release/. .
+          rm EPrimeSensi-AutoSigned.zip
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.10.2'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v4
+        with:
+          packages: 'platform-tools'
+
+      - name: Install Android SDK packages
+        run: |
+          sdkmanager "platforms;android-35" "build-tools;35.0.0"
+
+      - name: Generate signing key
+        run: |
+          keytool -genkeypair -v \
+            -keystore "$RUNNER_TEMP/eprime-release.keystore" \
+            -storetype JKS \
+            -storepass "eprime-temp-store" \
+            -alias "eprime-sensi" \
+            -keypass "eprime-temp-key" \
+            -keyalg RSA \
+            -keysize 2048 \
+            -validity 3650 \
+            -dname "CN=E-Prime Sensi, OU=E-Prime, O=E-Prime Sensi, L=Unknown, ST=Unknown, C=NG"
+
+      - name: Build signed release APK
+        env:
+          ANDROID_KEYSTORE_FILE: ${{ runner.temp }}/eprime-release.keystore
+          ANDROID_KEYSTORE_PASSWORD: eprime-temp-store
+          ANDROID_KEY_ALIAS: eprime-sensi
+          ANDROID_KEY_PASSWORD: eprime-temp-key
+        run: |
+          gradle --no-daemon clean assembleRelease
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: E-Prime-Sensi-release-apk
+          path: app/build/outputs/apk/release/*.apk
+          if-no-files-found: error
